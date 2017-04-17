@@ -1,0 +1,341 @@
+module CPU( clk, rst );
+
+	input clk;
+	input rst;
+
+	reg [15:0] pc;
+	reg [15:0] instruction;
+  reg	[15:0] instruction_memory [8:0]; //NUMBER OF INSTRUCTIONS
+
+	// Data Memory
+  reg [15:0] data_memory [10:0]; // Array[10] of 16bits in each slot
+	reg [15:0] data_address;
+
+	// Register Data
+	reg [2:0] 	reg_address_A; 	// reg to write reg_data_write
+	reg [15:0]	reg_data_A;		// data to write to register[reg_address_write]
+
+    reg [2:0] 	reg_address_B;		// address of register B
+	reg [15:0]	reg_data_B;			// data of register B
+	
+	reg [2:0] 	reg_address_C;		// address of register C
+	reg [15:0]	reg_data_C;			// data of register C
+
+	// Control Signals
+	reg [0:0] 	cs_write_reg;			// Controls If reg_data_write is written to reg_address_write
+ 	reg [0:0]    trigger;				//for nand operation use
+    reg [0:0]    trigger_lui;             // for lui operation
+	reg [3:0] 	cs_alu;					// Controls Which ALU Operation Will Be Commited
+	reg 		cs_alu_select;			// Controls If Operand1 = Instruction[9:0] OR reg_data_c
+	reg 		cs_read_data_memory;
+	reg 		cs_write_data_memory;
+
+	reg [3:0]  pc_control;
+
+	// ALU Properties
+	reg [15:0] alu_operand0;
+	reg [15:0] alu_operand1;
+    reg [15:0] alu_operand2;
+	reg [15:0] alu_result;
+	reg alu_overflow;
+	reg alu_zero;
+	
+	// Data
+	reg	[15:0] registers [7:0];
+
+	reg [2:0] opcode;
+	reg [15:0] immediate;
+	integer i;
+
+	initial begin
+		// Load Instructions
+		$readmemb("p2inst.mips",instruction_memory);
+
+		// Reset Registers
+		$display("\nPrint Registers:");
+	    for(i = 0; i < 8; i = i+1)
+		begin
+	        registers[i] = 0;
+	        $display("R%d = %d",i, registers[i]);
+		end
+	end
+	
+	always @(posedge clk or posedge rst)
+	begin
+		if (rst) begin
+			pc = 16'd0; // Reset PC to address 0x00
+		end
+	end
+
+	always @(posedge clk) begin
+
+		// Instruction Fetch
+		$display("\nPC = %b", pc);
+		instruction = instruction_memory[pc];
+		
+		// Print Instruction
+		$display("IF = %b", instruction);
+
+		// Reset Control Signals
+		cs_write_reg = 0;
+		cs_alu = 4'b0000;
+		cs_alu_select = 0;
+		cs_write_data_memory = 0;
+		cs_read_data_memory = 0;
+		
+		// Instruction Decode
+		assign opcode = instruction[15:13]; // Set the opcode
+		$display("Opcode =  %b" , opcode);
+		/* ID START:
+			You Will Need to implement support for the instructions assigned in the assignment.
+			ADDI has been implemented as a sample for you.
+
+			Note: You may need to add more control signals to support some instructions 
+		*/
+
+       	//add instruction
+      if(opcode == 3'b110) begin
+	        $display("R%d = %d",i, registers[i]);
+        $display("Instruction = ADD : %b = %b + %b --> (R%d = R%d + R%d) " ,instruction[12:10], instruction[9:7], 			instruction[2:0],  instruction[12:10], instruction[9:7], instruction[2:0]);
+          reg_address_A = instruction[12:10];
+          cs_write_reg = 1;
+          cs_alu = 4'b0110;
+          registers[1] = 5;
+          registers[2] = 3;
+          cs_alu_select = 0; 	//selecting source 2 register 
+	   	 end
+      
+        //addi instruction      
+		if(opcode == 3'b001) begin
+			$display("Instruction = ADDI : %b = %d", instruction[6:0], instruction[6:0]);
+			reg_address_A = instruction[12:10];
+			cs_write_reg = 1;
+			cs_alu = 4'b0001;
+			cs_alu_select = 1;   //selecting immediate value
+		end
+      
+        //lw instruction
+        if(opcode == 3'b010) begin
+          $display("Instruction = LW : %b = %d", instruction[6:0], instruction[6:0]);
+          reg_address_A = instruction[12:10];
+          cs_read_data_memory = 1;
+            data_memory[2] = 21;
+            data_memory[4] = 37;
+            registers[1] = 5;
+            cs_alu = 4'b0010;
+            cs_alu_select = 1;	     //selecting immediate value
+        end
+      
+      //sw instruction
+        if(opcode == 3'b011) 
+        begin
+          $display("Instruction = SW : %b = %d", instruction[6:0], instruction[6:0]);
+          reg_address_A = instruction[12:10];
+          cs_write_data_memory = 1;
+          cs_alu = 4'b0011;
+          registers[1] = 22;
+          registers[7] = 45;
+          cs_alu_select = 1;	//selecting immediate value
+        end
+      
+      
+        //nand instruction
+      if(opcode == 3'b111) 
+        begin
+          reg_address_A = instruction[12:10];
+          registers[1] = 5;
+          registers[2] = 4;
+          $display("Instruction = NAND : (R[%d] = %d = %b) ~& (R[%d] = %d = %b)" ,
+                   instruction[9:7], registers[instruction[9:7]], registers[instruction[9:7]],  instruction[2:0], 
+                   registers[instruction[2:0]], registers[instruction[2:0]]);
+          cs_alu = 4'b0111;
+          cs_write_reg = 1;
+          cs_alu_select = 0;    //taking source register 2
+        
+        end
+      //beq instruction
+      if(opcode == 3'b100) 
+        begin
+          registers[1] = 3;
+          registers[2] = 3;
+          $display("Instruction: BEQ : (R[%d] = %d) =/!= (R[%d] = %d)",
+                   instruction[12:10],registers[instruction[12:10]], instruction[9:7], registers[instruction[9:7]]);
+		  reg_address_A = instruction[12:10];
+          alu_operand2 = registers[reg_address_A];
+          cs_alu = 4'b0100;
+    	  cs_alu_select = 1;		//select the immediate value
+        end
+
+      //luis shift6
+      if(opcode == 3'b101) 
+       	 begin
+           $display("Instruction = LUI (Shift 6) : R[%d] = %d ", instruction[12:10], instruction[9:0]);
+         	 reg_address_A = instruction[12:10];
+         	 cs_alu = 4'b0101;
+         	 trigger_lui = 1;
+         	 cs_write_reg = 1;
+         	 cs_alu_select = 1;	
+         end
+        
+		// Read Registers
+		reg_address_B = instruction[9:7];
+		reg_address_C = instruction[2:0];
+
+		reg_data_B = registers[reg_address_B];
+		reg_data_C = registers[reg_address_C];
+
+		// ALU Operation
+immediate = { {9{1'b0}}, instruction[6:0]}; // This just extends the immediate value to 16 bits 
+        if(trigger_lui == 1) 
+        	begin
+              immediate = { {6{1'b0}}, instruction[9:0]};
+              trigger_lui = 0;
+        	end
+        alu_operand0 = reg_data_B;
+		alu_operand1 = (cs_alu_select == 0) ? reg_data_C : immediate;
+		// ALU START
+		case (cs_alu)
+			4'b0110: // add
+				begin
+					alu_result 		= alu_operand0 + alu_operand1;
+					alu_overflow 	= 0;
+					alu_zero		= (alu_result == 0) ? 1 : 0;
+
+                    $display("Added %d + %d = %d", alu_operand0, alu_operand1, alu_result);
+				end
+			4'b0001: // Signed add
+				begin
+					alu_result = alu_operand0 + alu_operand1;
+					
+					if ((alu_operand0 >= 0 && alu_operand1 >= 0 && alu_result < 0) ||
+						(alu_operand0 < 0 && alu_operand1 < 0 && alu_result >= 0)) begin
+						alu_overflow = 1;
+					end else begin
+						alu_overflow = 0;
+					end
+
+					alu_zero = (alu_result == 0) ? 1 : 0;
+					$display("Added %d + %d = %d",alu_operand0, alu_operand1, alu_result);
+				end
+              4'b0010:
+                begin
+                    data_address = immediate;			//Data Access
+                 	alu_result = alu_operand0 + data_memory[data_address];
+                    alu_overflow = 0;
+                 	alu_zero = (alu_result == 0) ? 1 : 0;
+                  $display("LW Added: R[%d] =(R[%d] = %d) + (D[%d] = %d) = %d",reg_address_A,reg_address_B, alu_operand0, data_address, data_memory[data_address], alu_result);
+                end
+          	  4'b0011:
+                begin
+                   data_address = immediate;			//Data Access
+                   alu_result = registers[reg_address_A] + alu_operand0;
+                   alu_overflow = 0;
+                   alu_zero = (alu_result == 0) ? 1 : 0;
+                  $display("SW Added: (R[%d] = %d) + (R[%d] = %d) = %d", reg_address_A, registers[reg_address_A], reg_address_B, alu_operand0, alu_result);
+                end    
+       		   4'b0111:
+                 begin
+                   alu_result = ~(alu_operand0 & alu_operand1);
+                   alu_overflow 	= 0;
+				   alu_zero		= (alu_result == 0) ? 1 : 0;
+
+                   $display("NAND %b ~& %b = %b", alu_operand0, alu_operand1, alu_result);
+                   trigger = 1;
+                 end
+              4'b0100: //beq
+                  begin
+                    alu_result = (alu_operand2 == alu_operand0) ? 1 : 0;
+                    $display("Retruns: %d", alu_result);
+                    alu_overflow = 0;
+                    alu_zero = (alu_result == 0) ? 1: 0;
+                    pc_control = (alu_result == 1) ? 3'b111 : 3'b000;
+                    $display("pc_result: %b", pc_control);
+                  end
+
+          4'b0101:
+                   begin
+                    alu_result = alu_operand1 << 6;
+                    alu_overflow = 0;
+                    alu_zero = (alu_result == 0) ? 1 : 0;
+                     $display("LUI (Shifted 6 Left) (%b = %d) = (%b = %d)", alu_operand1, alu_operand1, alu_result, alu_result);
+                   end
+			default:
+				begin
+					alu_zero 		= 0;
+					alu_overflow 	= 0;
+                end
+           
+		endcase
+		// ALU END
+				
+		// Write Back To Reg
+		if (cs_write_reg == 1) begin
+			registers[reg_address_A] = alu_result;
+			$display("Write R%d = %d",reg_address_A, alu_result);
+            if(trigger == 1) begin
+               $display("NAND R[%d] = %b", reg_address_A, registers[reg_address_A]);
+            end
+			$display("\nPrint Registers:");
+			for(i = 0; i < 8; i = i+1) begin
+		        $display("R%d = %d",i, registers[i]);
+			end
+		end
+
+                          
+        //For SW Instruction: Store from Reg to Memory
+         if (cs_write_data_memory == 1) begin
+           data_memory[data_address] = alu_result;
+          
+           $display("Data_Memory Changed: D[%d] = %d", data_address, data_memory[data_address]);
+           
+           
+           $display("\nPrint Registers:");
+		   for(i = 0; i < 8; i = i+1) begin
+		        $display("R%d = %d",i, registers[i]);
+			end
+            
+           $display("\nPrint Data Memory:");
+           for(i = 0; i < 8; i = i+1) begin
+              $display("D[%d] = %d",i, data_memory[i]);
+			end
+        end
+		
+
+        //For LW Instruction:  Load From Memory to Reg 
+        if(cs_read_data_memory == 1) begin
+            registers[reg_address_A] = alu_result;
+          
+            $display("Register Changed: R%d = %d", reg_address_A, registers[reg_address_A]);
+            
+            $display("\nPrint Data Memory:");
+            for(i = 0; i < 8; i = i+1) begin
+              $display("D[%d] = %d",i, data_memory[i]);
+			end
+            
+            $display("\nPrint Registers:");
+			for(i = 0; i < 8; i = i+1) begin
+		        $display("R%d = %d",i, registers[i]);
+			end
+        end
+
+		// Increment PC According to pc_control
+			case (pc_control)
+			3'b000 : 
+              begin 
+             	 pc = pc + 1;
+                $display("pc_changed: %b", pc);
+              end
+            3'b111 : 
+              begin
+                $display("immediate: %b", alu_operand1);
+                pc = (pc + 1 + alu_operand1);      // add immediate value to the pc + 1;
+                $display("pc_changed: %b", pc);
+              end
+			default: 
+              begin
+              	pc = pc + 1;
+              end
+		endcase
+	end
+
+endmodule
